@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; frame-src https:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>T3 Website Auth Test</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Website auth test</h1>
+        <p>Gemini + Muse · isolated profiles · T3 Code’s Electron 44.10.1</p>
+      </div>
+      <div class="actions">
+        <button id="export">Export report</button
+        ><button id="restart">Restart &amp; check persistence</button>
+      </div>
+    </header>
+    <section class="instructions">
+      <strong>1.</strong> Sign in directly in each website. <strong>2.</strong> Mark the visible
+      result. <strong>3.</strong> Restart and check each site again.
+      <span>External-browser login stays in that browser.</span>
+    </section>
+    <main>
+      <article>
+        <div class="pane-heading">
+          <h2>✦ Gemini</h2>
+          <button data-reload="gemini">Reload</button
+          ><button data-external="gemini">Open externally ↗</button>
+        </div>
+        <div class="origin" id="gemini-origin">https://gemini.google.com</div>
+        <webview
+          id="gemini"
+          src="https://gemini.google.com/"
+          partition="persist:t3-auth-probe-gemini"
+          webpreferences="contextIsolation=false,sandbox=true,nodeIntegration=false"
+          allowpopups
+        ></webview>
+        <div class="result">
+          <label
+            >Visible result
+            <select data-result="gemini">
+              <option value="not-tested">Not tested</option>
+              <option value="signed-in">Signed in</option>
+              <option value="blocked">Login blocked / unsupported</option>
+              <option value="signed-out">Signed out</option>
+            </select></label
+          >
+          <p id="gemini-status" aria-live="polite"></p>
+        </div>
+      </article>
+      <article>
+        <div class="pane-heading">
+          <h2>M Muse AI</h2>
+          <button data-reload="muse">Reload</button
+          ><button data-external="muse">Open externally ↗</button>
+        </div>
+        <div class="origin" id="muse-origin">https://muse.ai</div>
+        <webview
+          id="muse"
+          src="https://muse.ai/"
+          partition="persist:t3-auth-probe-muse"
+          webpreferences="contextIsolation=false,sandbox=true,nodeIntegration=false"
+          allowpopups
+        ></webview>
+        <div class="result">
+          <label
+            >Visible result
+            <select data-result="muse">
+              <option value="not-tested">Not tested</option>
+              <option value="signed-in">Signed in</option>
+              <option value="blocked">Login blocked / unsupported</option>
+              <option value="signed-out">Signed out</option>
+            </select></label
+          >
+          <p id="muse-status" aria-live="polite"></p>
+        </div>
+      </article>
+    </main>
+    <footer id="summary">
+      Profiles stay in this probe. Reports exclude cookies, credentials, page content, and URL paths
+      or queries.
+    </footer>
+    <script src="renderer.js"></script>
+  </body>
+</html>

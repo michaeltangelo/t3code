@@ -1,0 +1,14 @@
+{
+  "name": "t3-browser-auth-probe",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated website sign-in compatibility probe for T3 Code",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "node launch.cjs",
+    "test": "node self-test.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.10.1"
+  }
+}
