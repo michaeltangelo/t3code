@@ -1,5 +1,7 @@
 # Shared paths and helpers for the fork's launch, sync and ship scripts. See FORK.md.
 $ErrorActionPreference = 'Stop'
+# Text piped to git and node must not start with a byte-order mark.
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 $Repo = Join-Path $env:USERPROFILE 'code\t3code'
 $Root = Join-Path $env:USERPROFILE 'code\t3code-slots'
