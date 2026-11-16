@@ -58,6 +58,7 @@ The commits on `mine` beyond `refs/fork/base`, and why each exists:
 
 - Fork tooling: `FORK.md`, `fork/`, and one line in `AGENTS.md` pointing here.
 - Claude usage limits: read Session/Weekly windows from `unifiedWindows` on newer Claude CLIs (michaeltangelo/t3code#1).
+- Sidebar usage bar: always-on agent usage bar in the sidebar footer (refreshes every 5 min, compact/detailed popover), plus an Antigravity usage fallback to `agy -p /usage`.
 
 ## Dropped patches
 

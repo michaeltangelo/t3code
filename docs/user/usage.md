@@ -110,6 +110,12 @@ setting removes it from `settings.json`.
 
 ## Track subscription limits
 
+Codex connected through **Continue with ChatGPT** uses **Manage usage** to open
+ChatGPT settings; it does not show numeric subscription limits here. To see
+native Codex limits, [use an existing Codex login](./providers-codex.md#use-an-existing-codex-login).
+Those readings belong to the CLI account and do not describe a managed
+connection's app-specific allowance.
+
 **Usage → Limits** pools every subscription account it can see per provider, so with several Codex
 or Claude accounts across your enabled environments and hubs you read one number per window rather than a
 list. Each window card shows how much of the pool is left and a bar with one segment per account,

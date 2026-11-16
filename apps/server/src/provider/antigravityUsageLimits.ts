@@ -1,5 +1,7 @@
 import type { AntigravitySettings, ServerProviderUsageWindow } from "@t3tools/contracts";
+import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
@@ -7,6 +9,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
@@ -14,6 +18,10 @@ import {
   makeUnavailableUsageLimits,
   makeUsageLimits,
 } from "@t3tools/provider-core/server/usageLimits";
+import {
+  ANTIGRAVITY_AUTH_BROWSER_MARKER,
+  ANTIGRAVITY_AUTH_STDOUT_PREFIX,
+} from "./antigravityAuthSupport.ts";
 
 export function antigravityUserAgent(platform: NodeJS.Platform, architecture: NodeJS.Architecture) {
   return `antigravity/hub/2.24.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`;
@@ -76,12 +84,67 @@ const Models = Schema.Struct({
     }),
   ),
 });
+const CliBucket = Schema.Struct({
+  id: Schema.NonEmptyString,
+  name: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  window: Schema.optional(Schema.String),
+  remaining_fraction: Schema.optional(Schema.Number),
+  reset_time: Schema.optional(Schema.String),
+  disabled: Schema.optional(Schema.Boolean),
+});
+const CliSummary = Schema.Struct({
+  description: Schema.optional(Schema.String),
+  groups: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.optional(Schema.String),
+        description: Schema.optional(Schema.String),
+        buckets: Schema.optional(Schema.Array(CliBucket)),
+      }),
+    ),
+  ),
+  buckets: Schema.optional(Schema.Array(CliBucket)),
+});
+const CliUsageEnvelope = Schema.Struct({
+  status: Schema.Literal("SUCCESS"),
+  command: Schema.Struct({
+    name: Schema.Literal("usage"),
+    data: CliSummary,
+  }),
+});
+const CliTurnEnvelope = Schema.Struct({
+  conversation_id: Schema.optional(Schema.String),
+  num_turns: Schema.optional(Schema.Number),
+});
+
+// Before agy 1.1.11, `/usage` in print mode spent a model turn instead of running the command.
+const ANTIGRAVITY_MIN_USAGE_CLI_VERSION = "1.1.11";
+const CLI_USAGE_ARGS = ["-p", "/usage", "--output-format", "json", "--print-timeout", "20s"];
+const CLI_MAX_OUTPUT_BYTES = 512 * 1024;
+const CLI_SIGNED_OUT_PHRASES = [
+  "authentication required. please visit the url",
+  "not logged into antigravity",
+  "not logged in",
+  "not signed in",
+  "not authenticated",
+  "not-authenticated",
+  "unauthenticated",
+  "run agy login",
+  "please sign in",
+  "please log in",
+  "sign in to antigravity",
+  "no credentials",
+  "authentication required",
+] as const;
 
 const decodeTokenFile = Schema.decodeEffect(Schema.fromJsonString(TokenFile));
 const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse);
 const decodeUserInfo = Schema.decodeUnknownEffect(UserInfo);
 const decodeSummary = Schema.decodeUnknownEffect(Summary);
 const decodeModels = Schema.decodeUnknownEffect(Models);
+const decodeCliUsageEnvelope = Schema.decodeUnknownOption(Schema.fromJsonString(CliUsageEnvelope));
+const decodeCliTurnEnvelope = Schema.decodeUnknownOption(Schema.fromJsonString(CliTurnEnvelope));
 
 function iso(value: string | undefined): string | undefined {
   const parsed = value ? DateTime.make(value) : Option.none();
@@ -207,9 +270,99 @@ function modelWindows(models: typeof Models.Type) {
   return [...windows.values()];
 }
 
+function toSummaryBucket(bucket: typeof CliBucket.Type): typeof Bucket.Type {
+  return {
+    bucketId: bucket.id,
+    ...(bucket.name !== undefined ? { displayName: bucket.name } : {}),
+    ...(bucket.description !== undefined ? { description: bucket.description } : {}),
+    ...(bucket.window !== undefined ? { window: bucket.window } : {}),
+    ...(bucket.remaining_fraction !== undefined
+      ? { remainingFraction: bucket.remaining_fraction }
+      : {}),
+    ...(bucket.reset_time !== undefined ? { resetTime: bucket.reset_time } : {}),
+    ...(bucket.disabled !== undefined ? { disabled: bucket.disabled } : {}),
+  };
+}
+
+function toSummary(cli: typeof CliSummary.Type): typeof Summary.Type {
+  return {
+    ...(cli.groups !== undefined
+      ? {
+          groups: cli.groups.map((group) => ({
+            ...(group.name !== undefined ? { displayName: group.name } : {}),
+            ...(group.buckets !== undefined ? { buckets: group.buckets.map(toSummaryBucket) } : {}),
+          })),
+        }
+      : {}),
+    ...(cli.buckets !== undefined ? { buckets: cli.buckets.map(toSummaryBucket) } : {}),
+  };
+}
+
+/** Windows from an `agy -p /usage --output-format json` print envelope requested at `requestedAt`. */
+export function antigravityCliUsageWindows(
+  stdout: string,
+  requestedAt: number,
+): ReadonlyArray<ServerProviderUsageWindow> | null {
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    const decoded = decodeCliUsageEnvelope(trimmed);
+    if (Option.isSome(decoded)) {
+      return summaryWindows(toSummary(decoded.value.command.data), requestedAt);
+    }
+  }
+  return null;
+}
+
+function cliOutputShowsModelTurn(stdout: string): boolean {
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    const decoded = decodeCliTurnEnvelope(trimmed);
+    if (
+      Option.isSome(decoded) &&
+      ((decoded.value.num_turns !== undefined && decoded.value.num_turns > 0) ||
+        Boolean(decoded.value.conversation_id?.trim()))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isCliSignedOutOutput(output: string): boolean {
+  if (
+    output.includes(ANTIGRAVITY_AUTH_BROWSER_MARKER) ||
+    output.includes(ANTIGRAVITY_AUTH_STDOUT_PREFIX)
+  ) {
+    return true;
+  }
+  for (const line of output.split("\n")) {
+    const index = line.indexOf("AGY_ERROR:");
+    if (index === -1) continue;
+    const payload = line.slice(index + "AGY_ERROR:".length).trim();
+    if (/^\{.*"status"\s*:\s*"UNAUTHENTICATED"|"error_code"\s*:\s*401/i.test(payload)) {
+      return true;
+    }
+  }
+  const lowered = output.toLowerCase();
+  return CLI_SIGNED_OUT_PHRASES.some((phrase) => lowered.includes(phrase));
+}
+
+function parseCliSemver(text: string): string | null {
+  return text.match(/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/)?.[1] ?? null;
+}
+
+export interface AntigravityUsageCli {
+  readonly executablePath: string;
+  readonly version: string | null;
+  readonly env?: NodeJS.ProcessEnv;
+}
+
 export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(function* (input: {
   readonly profileDirectory: string;
   readonly authMethod: AntigravitySettings["authMethod"];
+  readonly resolveCli?: Effect.Effect<AntigravityUsageCli | null>;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -217,11 +370,133 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
   const crypto = yield* Digest.Digest;
   const platform = yield* HostProcess.Platform;
   const architecture = yield* HostProcess.Architecture;
+  const spawnerOption = yield* Effect.serviceOption(ChildProcessSpawner.ChildProcessSpawner);
   const tokenPath = path.join(input.profileDirectory, "antigravity-acp", "acp_token.json");
   let cached:
     | { fingerprint: string; account: string; accessToken: string; expiresAt: number }
     | undefined;
+  let cliSignedOut = false;
+  let unsupportedCliExecutable: string | null = null;
   let generation = 0;
+
+  const runCliCommand = Effect.fn("AntigravityUsageProbe.runCliCommand")(function* (
+    spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+    executablePath: string,
+    args: ReadonlyArray<string>,
+    env: NodeJS.ProcessEnv | undefined,
+    timeout: "5 seconds" | "25 seconds",
+  ) {
+    return yield* Effect.gen(function* () {
+      const child = yield* spawner.spawn(
+        ChildProcess.make(executablePath, [...args], {
+          env: {
+            ...(env ?? process.env),
+            AGY_CLI_DISABLE_AUTO_UPDATE: "true",
+          },
+          extendEnv: false,
+          shell: false,
+        }),
+      );
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [
+          collectUint8StreamText({ stream: child.stdout, maxBytes: CLI_MAX_OUTPUT_BYTES }),
+          collectUint8StreamText({ stream: child.stderr, maxBytes: CLI_MAX_OUTPUT_BYTES }),
+          child.exitCode,
+        ],
+        { concurrency: "unbounded" },
+      );
+      return { stdout: stdout.text, stderr: stderr.text, exitCode: Number(exitCode) };
+    }).pipe(Effect.scoped, Effect.timeout(timeout));
+  });
+
+  const readFromCli = Effect.fn("AntigravityUsageProbe.readFromCli")(function* (
+    startedGeneration: number,
+    checkedAt: string,
+  ) {
+    if (cliSignedOut || !input.resolveCli || Option.isNone(spawnerOption)) {
+      return makeUnavailableUsageLimits({
+        checkedAt,
+        reason: "unsupported",
+        message: "Sign in with Google to see Antigravity limits.",
+      });
+    }
+    const cli = yield* input.resolveCli;
+    if (!cli) {
+      return makeUnavailableUsageLimits({
+        checkedAt,
+        reason: "unsupported",
+        message: "Sign in with Google to see Antigravity limits.",
+      });
+    }
+    if (unsupportedCliExecutable === cli.executablePath) {
+      return makeUnavailableUsageLimits({
+        checkedAt,
+        reason: "unsupported",
+        message: `Update Antigravity to ${ANTIGRAVITY_MIN_USAGE_CLI_VERSION} or newer to see limits.`,
+      });
+    }
+    const spawner = spawnerOption.value;
+    let version = cli.version ? parseCliSemver(cli.version) : null;
+    if (!version) {
+      const versionRun = yield* runCliCommand(
+        spawner,
+        cli.executablePath,
+        ["--version"],
+        cli.env,
+        "5 seconds",
+      ).pipe(Effect.orElseSucceed(() => null));
+      version = versionRun
+        ? parseCliSemver(versionRun.stdout.trim() ? versionRun.stdout : versionRun.stderr)
+        : null;
+    }
+    if (!version || (compareSemverVersions(version, ANTIGRAVITY_MIN_USAGE_CLI_VERSION) ?? -1) < 0) {
+      return makeUnavailableUsageLimits({
+        checkedAt,
+        reason: "unsupported",
+        message: `Update Antigravity to ${ANTIGRAVITY_MIN_USAGE_CLI_VERSION} or newer to see limits.`,
+      });
+    }
+    const result = yield* runCliCommand(
+      spawner,
+      cli.executablePath,
+      CLI_USAGE_ARGS,
+      cli.env,
+      "25 seconds",
+    );
+    const requestedAt = yield* Clock.currentTimeMillis;
+    const windows = antigravityCliUsageWindows(result.stdout, requestedAt);
+    if (windows !== null) {
+      if (windows.length === 0) {
+        return makeUnavailableUsageLimits({
+          checkedAt,
+          reason: "probeFailed",
+          message: "Antigravity did not return usable quota information.",
+        });
+      }
+      return makeUsageLimits({ checkedAt, windows: [...windows] });
+    }
+    if (cliOutputShowsModelTurn(result.stdout)) {
+      unsupportedCliExecutable = cli.executablePath;
+      return makeUnavailableUsageLimits({
+        checkedAt,
+        reason: "unsupported",
+        message: `Update Antigravity to ${ANTIGRAVITY_MIN_USAGE_CLI_VERSION} or newer to see limits.`,
+      });
+    }
+    if (isCliSignedOutOutput(`${result.stdout}\n${result.stderr}`)) {
+      if (generation === startedGeneration) cliSignedOut = true;
+      return makeUnavailableUsageLimits({
+        checkedAt,
+        reason: "unsupported",
+        message: "Sign in with Google to see Antigravity limits.",
+      });
+    }
+    return makeUnavailableUsageLimits({
+      checkedAt,
+      reason: "probeFailed",
+      message: "Antigravity did not return usable quota information.",
+    });
+  });
 
   const request = (request: HttpClientRequest.HttpClientRequest) =>
     client.execute(request).pipe(
@@ -238,11 +513,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     }
     if (!(yield* fs.exists(tokenPath))) {
       cached = undefined;
-      return makeUnavailableUsageLimits({
-        checkedAt,
-        reason: "unsupported",
-        message: "Sign in with Google to see Antigravity limits.",
-      });
+      return yield* readFromCli(startedGeneration, checkedAt);
     }
     const token = yield* fs.readFileString(tokenPath).pipe(Effect.flatMap(decodeTokenFile));
     const fingerprint = yield* sha256(
@@ -355,6 +626,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     probe,
     clear: Effect.sync(() => {
       cached = undefined;
+      cliSignedOut = false;
       generation++;
     }),
   };

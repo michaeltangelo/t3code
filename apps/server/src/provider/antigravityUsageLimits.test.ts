@@ -8,9 +8,15 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as TestClock from "effect/testing/TestClock";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Stream from "effect/Stream";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 
-import { makeAntigravityUsageProbe } from "./antigravityUsageLimits.ts";
+import {
+  antigravityCliUsageWindows,
+  makeAntigravityUsageProbe,
+  type AntigravityUsageCli,
+} from "./antigravityUsageLimits.ts";
 
 const summary = {
   groups: [
@@ -66,6 +72,7 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
     userInfoAt?: number;
     missingToken?: boolean;
     authMethod?: "oauth-personal" | "oauth-business" | "gemini-api-key";
+    resolveCli?: Effect.Effect<AntigravityUsageCli | null>;
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -132,6 +139,7 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
   const usage = yield* makeAntigravityUsageProbe({
     profileDirectory,
     authMethod: options.authMethod ?? "oauth-personal",
+    ...(options.resolveCli ? { resolveCli: options.resolveCli } : {}),
   }).pipe(Effect.provideService(HttpClient.HttpClient, http));
   return { ...usage, requests, writeToken, tokenPath };
 });
@@ -661,6 +669,191 @@ describe("Antigravity subscription limits", () => {
         expect((yield* probe).unavailable?.reason).toBe("unsupported");
         expect(requests).toEqual([]);
       }
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect("reads keyring-backed agy CLI usage when acp_token.json is absent", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-16T07:40:05Z")));
+      const cliEnvelope = JSON.stringify({
+        conversation_id: "",
+        status: "SUCCESS",
+        num_turns: 0,
+        command: {
+          name: "usage",
+          data: {
+            groups: [
+              {
+                name: "Gemini Models",
+                buckets: [
+                  {
+                    id: "gemini-weekly",
+                    name: "Weekly Limit Remaining",
+                    window: "weekly",
+                    remaining_fraction: 1,
+                    reset_time: "2026-11-23T07:40:05Z",
+                  },
+                  {
+                    id: "gemini-5h",
+                    name: "Five Hour Limit Remaining",
+                    window: "5h",
+                    remaining_fraction: 1,
+                    reset_time: "2026-11-16T12:40:05Z",
+                  },
+                ],
+              },
+              {
+                name: "Claude and GPT models",
+                buckets: [
+                  {
+                    id: "3p-weekly",
+                    name: "Weekly Limit Remaining",
+                    window: "weekly",
+                    remaining_fraction: 1,
+                    reset_time: "2026-11-23T07:40:05Z",
+                  },
+                  {
+                    id: "3p-5h",
+                    name: "Five Hour Limit Remaining",
+                    window: "5h",
+                    remaining_fraction: 1,
+                    reset_time: "2026-11-16T12:40:05Z",
+                  },
+                ],
+              },
+              {
+                name: "Gemini 4 Argon",
+                buckets: [
+                  {
+                    id: "gemini-argon-wtu-weekly",
+                    name: "Gemini 4 Argon Weekly Limit",
+                    description:
+                      "You have used some of your weekly limit, it will fully refresh in 6 days, 23 hours.",
+                    window: "weekly",
+                    remaining_fraction: 0.883344,
+                    reset_time: "2026-11-23T06:41:33Z",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      });
+      const spawned: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+      const spawner = ChildProcessSpawner.make((command) =>
+        Effect.sync(() => {
+          if (command._tag === "StandardCommand") {
+            spawned.push({ command: command.command, args: command.args.map(String) });
+            expect(command.options.env?.AGY_CLI_DISABLE_AUTO_UPDATE).toBe("true");
+          }
+          return ChildProcessSpawner.makeHandle({
+            pid: ChildProcessSpawner.ProcessId(1),
+            exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+            isRunning: Effect.succeed(false),
+            kill: () => Effect.void,
+            unref: Effect.succeed(Effect.void),
+            stdin: { write: () => Effect.void } as never,
+            stdout: Stream.make(new TextEncoder().encode(`${cliEnvelope}\n`)),
+            stderr: Stream.empty,
+            all: Stream.empty,
+            getInputFd: () => ({ write: () => Effect.void }) as never,
+            getOutputFd: () => Stream.empty,
+          });
+        }),
+      );
+      const { probe, requests } = yield* fixture({
+        missingToken: true,
+        resolveCli: Effect.succeed({
+          executablePath: "/tools/antigravity/agy",
+          version: "1.5.9",
+        }),
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+      const limits = yield* probe;
+      expect(requests).toEqual([]);
+      expect(spawned).toEqual([
+        {
+          command: "/tools/antigravity/agy",
+          args: ["-p", "/usage", "--output-format", "json", "--print-timeout", "20s"],
+        },
+      ]);
+      expect(limits.unavailable).toBeUndefined();
+      expect(limits.windows).toHaveLength(5);
+      const byId = new Map(limits.windows.map((window) => [window.id, window]));
+      expect(byId.get("gemini-5h")).toEqual({
+        id: "gemini-5h",
+        label: "Gemini · 5-hour",
+        kind: "session",
+        usedPercent: 0,
+        windowDurationMins: 300,
+      });
+      expect(byId.get("3p-weekly")).toEqual({
+        id: "3p-weekly",
+        label: "Claude & GPT (shared) · Weekly",
+        kind: "weekly",
+        usedPercent: 0,
+        windowDurationMins: 10080,
+      });
+      expect(byId.get("gemini-argon-wtu-weekly")).toMatchObject({
+        id: "gemini-argon-wtu-weekly",
+        label: "Gemini 4 Argon · Weekly",
+        kind: "weekly",
+        resetsAt: "2026-11-23T06:41:33.000Z",
+        windowDurationMins: 10080,
+      });
+      expect(byId.get("gemini-argon-wtu-weekly")?.usedPercent).toBeCloseTo(11.6656, 3);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect("holds signed-out CLI probes until cleared and rejects pre-1.1.11 CLIs", () =>
+    Effect.gen(function* () {
+      let spawns = 0;
+      const spawner = ChildProcessSpawner.make(() =>
+        Effect.sync(() => {
+          spawns += 1;
+          return ChildProcessSpawner.makeHandle({
+            pid: ChildProcessSpawner.ProcessId(1),
+            exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+            isRunning: Effect.succeed(false),
+            kill: () => Effect.void,
+            unref: Effect.succeed(Effect.void),
+            stdin: { write: () => Effect.void } as never,
+            stdout: Stream.empty,
+            stderr: Stream.make(
+              new TextEncoder().encode(
+                "Authentication required. Please visit the URL to sign in.\n",
+              ),
+            ),
+            all: Stream.empty,
+            getInputFd: () => ({ write: () => Effect.void }) as never,
+            getOutputFd: () => Stream.empty,
+          });
+        }),
+      );
+      const oldCli = yield* fixture({
+        missingToken: true,
+        resolveCli: Effect.succeed({
+          executablePath: "/tools/antigravity/agy",
+          version: "1.1.10",
+        }),
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+      expect((yield* oldCli.probe).unavailable?.reason).toBe("unsupported");
+      expect(spawns).toBe(0);
+
+      const signedOutCli = yield* fixture({
+        missingToken: true,
+        resolveCli: Effect.succeed({
+          executablePath: "/tools/antigravity/agy",
+          version: "1.5.9",
+        }),
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+      expect((yield* signedOutCli.probe).unavailable?.reason).toBe("unsupported");
+      expect(spawns).toBe(1);
+      expect((yield* signedOutCli.probe).unavailable?.reason).toBe("unsupported");
+      expect(spawns).toBe(1);
+      yield* signedOutCli.clear;
+      expect((yield* signedOutCli.probe).unavailable?.reason).toBe("unsupported");
+      expect(spawns).toBe(2);
+      expect(antigravityCliUsageWindows("not json", 0)).toBeNull();
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

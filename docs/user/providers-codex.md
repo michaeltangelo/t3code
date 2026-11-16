@@ -9,6 +9,10 @@ select that environment first. T3 Code handles Codex installation; sign in on
 OpenAI and allow sharing of your ChatGPT plan.
 
 Manage shared usage and credits in ChatGPT through **Manage usage** in T3 Code.
+This connection does not show numeric subscription limits in T3 Code. Open
+ChatGPT with the account you connected; a limit can apply to your plan or to
+T3 Code specifically. Refreshing provider status or signing into the Codex CLI
+does not add limit bars to this connection.
 If a request uses a feature that ChatGPT sharing does not support, use another
 provider for that request.
 
@@ -32,6 +36,17 @@ Running `codex login` does not change a managed ChatGPT connection. In
 **Settings > Providers**, add a Codex instance, choose **Configure manually**,
 and complete the wizard. Then select that instance from the thread's model
 picker. See [Use multiple accounts](#use-multiple-accounts).
+
+To see native Codex subscription limits, use this existing-login instance with a
+ChatGPT login and the default OpenAI route, then open **Usage → Limits** and refresh.
+Set **CODEX_HOME path** to the home containing that login if it is not the default
+on that machine. Check the account reported in provider settings before using
+its limits. API-key and custom-endpoint connections do not report native Codex
+subscription limits in T3 Code.
+
+You can keep the managed ChatGPT connection alongside the existing-login instance.
+The CLI account's limits do not establish how much usage remains for the managed
+connection; use **Manage usage** for that connection.
 
 ## Allow more time for provider checks
 
