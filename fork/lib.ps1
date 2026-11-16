@@ -111,7 +111,14 @@ function Build-Slot([string]$Slot, [string]$Commit) {
   Invoke-Git $dir checkout --detach --force $Commit | Out-Null
   Push-Location $dir
   try {
-    foreach ($step in @(@('install', '--frozen-lockfile'), @('run', 'build:desktop'), @('run', 'typecheck'))) {
+    $steps = @(
+      @('install', '--frozen-lockfile'),
+      # install skips Electron's own download; this fetches the runtime the launcher starts.
+      @('--filter', '@t3tools/desktop', 'run', 'ensure:electron'),
+      @('run', 'build:desktop'),
+      @('run', 'typecheck')
+    )
+    foreach ($step in $steps) {
       Write-Log "slot ${Slot}: pnpm $($step -join ' ')"
       & corepack pnpm @step *>> $log
       if ($LASTEXITCODE -ne 0) {
@@ -121,6 +128,15 @@ function Build-Slot([string]$Slot, [string]$Commit) {
       }
     }
   } finally { Pop-Location }
+
+  $missing = @('apps\desktop\node_modules\electron\dist\electron.exe', 'apps\desktop\dist-electron\main.cjs',
+    'apps\server\dist\bin.mjs', 'apps\server\dist\client\index.html') |
+    Where-Object { -not (Test-Path (Join-Path $dir $_)) }
+  if ($missing) {
+    Write-Log "slot ${Slot}: build is missing $($missing -join ', ')"
+    $state = Read-State; $state.failed[$Commit] = (Get-Date -Format s); Save-State $state
+    return $false
+  }
 
   $state = Read-State
   $state.slots[$Slot] = @{ commit = $Commit; builtAt = (Get-Date -Format s); migrations = $buildHead }
