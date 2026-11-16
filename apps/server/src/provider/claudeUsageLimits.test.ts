@@ -240,6 +240,67 @@ describe("claudeUsageResponseToLimits", () => {
 });
 
 describe("claudeRateLimitEventToUpdate", () => {
+  it("reads both windows from Claude's unified event payload", () => {
+    expect(
+      claudeRateLimitEventToUpdate(
+        {
+          status: "allowed",
+          rateLimitType: "five_hour",
+          unifiedWindows: {
+            five_hour: { status: "allowed", utilization: 0.59, resetsAt: 1_794_811_200 },
+            seven_day: { status: "allowed", utilization: 0.56, resetsAt: 1_795_186_800 },
+          },
+        } as never,
+        noNames,
+      ),
+    ).toEqual({
+      windows: [
+        {
+          id: "five_hour",
+          kind: "session",
+          label: "Session",
+          usedPercent: 59,
+          windowDurationMins: 300,
+          resetsAt: "2026-11-16T06:40:00.000Z",
+        },
+        {
+          id: "seven_day",
+          kind: "weekly",
+          label: "Weekly",
+          usedPercent: 56.00000000000001,
+          windowDurationMins: 10080,
+          resetsAt: "2026-11-20T15:00:00.000Z",
+        },
+      ],
+    });
+  });
+
+  it("ignores malformed unified windows and prefers valid unified values over legacy values", () => {
+    expect(
+      claudeRateLimitEventToUpdate(
+        {
+          status: "allowed",
+          rateLimitType: "five_hour",
+          utilization: 0.1,
+          unifiedWindows: {
+            five_hour: { utilization: 0.4 },
+            seven_day: { utilization: "bad" },
+          },
+        } as never,
+        noNames,
+      ),
+    ).toEqual({
+      windows: [
+        {
+          id: "five_hour",
+          kind: "session",
+          label: "Session",
+          usedPercent: 40,
+          windowDurationMins: 300,
+        },
+      ],
+    });
+  });
   it("scales the 0–1 utilization and epoch-second reset onto the probe's window id", () => {
     expect(
       claudeRateLimitEventToUpdate(
