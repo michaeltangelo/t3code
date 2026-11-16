@@ -158,9 +158,11 @@ function Set-ActiveSlot([string]$Slot) {
 
 # Moves mine and refs/fork/base together, only if neither moved since we read them.
 function Update-Mine([string]$New, [string]$Old, [string]$NewBase, [string]$OldBase) {
-  $tx = "start`nupdate refs/heads/mine $New $Old`nupdate refs/fork/base $NewBase $OldBase`ncommit`n"
-  $tx | & git -C $Repo update-ref --stdin
-  if ($LASTEXITCODE -ne 0) { throw 'mine moved while this ran; nothing was changed.' }
+  # Through a file: piping would append a CRLF that git rejects after the transaction commits.
+  $txFile = Join-Path $LogDir 'update-ref.txt'
+  [System.IO.File]::WriteAllText($txFile, "start`nupdate refs/heads/mine $New $Old`nupdate refs/fork/base $NewBase $OldBase`ncommit`n")
+  $out = & cmd /c "git -C `"$Repo`" update-ref --stdin < `"$txFile`" 2>&1"
+  if ($LASTEXITCODE -ne 0) { throw "mine moved while this ran; nothing was changed. git: $out" }
   Write-Log "mine $Old -> $New (base $NewBase)"
   if ((Read-State).push) {
     & git -C $Repo push --quiet --force-with-lease="mine:$Old" origin mine *>> (Join-Path $LogDir 'fork.log')
