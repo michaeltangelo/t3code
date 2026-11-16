@@ -168,19 +168,36 @@ export function claudeRateLimitEventToUpdate(
   info: SDKRateLimitInfo,
   names: ClaudeScopedLimitNames,
 ): ProviderUsageLimitsUpdate | undefined {
+  // Newer Claude CLI versions put utilization for each window here, rather than
+  // on the top-level rate limit event. SDK types may lag the CLI payload.
+  const unified = (info as { readonly unifiedWindows?: unknown }).unifiedWindows;
+  const windows: ServerProviderUsageWindow[] = [];
+  if (typeof unified === "object" && unified !== null) {
+    for (const id of Object.keys(WINDOWS) as Array<keyof typeof WINDOWS & string>) {
+      const entry: unknown = (unified as Record<string, unknown>)[id];
+      if (typeof entry !== "object" || entry === null) continue;
+      const { utilization, resetsAt } = entry as { utilization?: unknown; resetsAt?: unknown };
+      if (typeof utilization !== "number" || !Number.isFinite(utilization)) continue;
+      windows.push(
+        makeWindow(
+          id,
+          utilization * 100,
+          isoFromEpochSeconds(typeof resetsAt === "number" ? resetsAt : undefined),
+        ),
+      );
+    }
+  }
   const type: string | undefined = info.rateLimitType;
-  if (!type || typeof info.utilization !== "number") {
-    return undefined;
+  if (type && typeof info.utilization === "number" && Number.isFinite(info.utilization)) {
+    const usedPercent = info.utilization * 100;
+    const resetsAt = isoFromEpochSeconds(info.resetsAt);
+    if (type in WINDOWS && !windows.some((window) => window.id === type)) {
+      windows.push(makeWindow(type as keyof typeof WINDOWS & string, usedPercent, resetsAt));
+    } else if (type === OVERAGE_INCLUDED_EVENT_TYPE && names.overageIncluded) {
+      windows.push(scopedWindow(names.overageIncluded, usedPercent, resetsAt));
+    }
   }
-  const usedPercent = info.utilization * 100;
-  const resetsAt = isoFromEpochSeconds(info.resetsAt);
-  if (type in WINDOWS) {
-    return { windows: [makeWindow(type, usedPercent, resetsAt)] };
-  }
-  if (type === OVERAGE_INCLUDED_EVENT_TYPE && names.overageIncluded) {
-    return { windows: [scopedWindow(names.overageIncluded, usedPercent, resetsAt)] };
-  }
-  return undefined;
+  return windows.length > 0 ? { windows } : undefined;
 }
 
 /** get_usage percentages are already 0-100. */

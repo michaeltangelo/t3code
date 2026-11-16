@@ -57,6 +57,7 @@ intent. If one can't survive the new upstream, drop it and note why under "Dropp
 The commits on `mine` beyond `refs/fork/base`, and why each exists:
 
 - Fork tooling: `FORK.md`, `fork/`, and one line in `AGENTS.md` pointing here.
+- Claude usage limits: read Session/Weekly windows from `unifiedWindows` on newer Claude CLIs (michaeltangelo/t3code#1).
 
 ## Dropped patches
 
