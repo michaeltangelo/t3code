@@ -12196,5 +12196,14 @@
   "27d76249d09eb69f": "Review-Leitfaden bereit",
   "faa3bb26abb39c93": "Review-Leitfaden fehlgeschlagen",
   "b7df38b7d8792d78": "Leitfaden öffnen",
-  "9e91e9a77b664e4e": "Review-Leitfaden konnte nicht gestartet werden"
+  "9e91e9a77b664e4e": "Review-Leitfaden konnte nicht gestartet werden",
+  "7f4589dde6dd4e54": "1-Stunden-Cache",
+  "77ee2660632ddcc9": "5-Minuten-Cache",
+  "dd37d85aa8695f86": "Prompt-Cache kalt",
+  "16e2bbb87cae6d75": "Prompt-Cache warm bis {time}",
+  "173ee522a3c92637": "Kalt",
+  "6cb61d30ad61ef70": "Claudes Prompt-Cache ist um {time} kalt geworden",
+  "2303f31fa9cb3501": "Claudes Prompt-Cache bleibt bis {time} warm",
+  "130353144879c702": "{ttl}. Die nächste Nachricht liest die ganze Unterhaltung erneut.",
+  "cc851b20f4fab12a": "{ttl}. Eine Nachricht, die vorher gesendet wird, nutzt die zwischengespeicherte Unterhaltung."
 }

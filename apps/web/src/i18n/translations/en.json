@@ -12205,5 +12205,14 @@
   "27d76249d09eb69f": "Review guide ready",
   "faa3bb26abb39c93": "Review guide failed",
   "b7df38b7d8792d78": "Open guide",
-  "9e91e9a77b664e4e": "Could not start a review guide"
+  "9e91e9a77b664e4e": "Could not start a review guide",
+  "7f4589dde6dd4e54": "1 hour cache",
+  "77ee2660632ddcc9": "5 minute cache",
+  "dd37d85aa8695f86": "Prompt cache cold",
+  "16e2bbb87cae6d75": "Prompt cache warm until {time}",
+  "173ee522a3c92637": "Cold",
+  "6cb61d30ad61ef70": "Claude's prompt cache went cold at {time}",
+  "2303f31fa9cb3501": "Claude's prompt cache stays warm until {time}",
+  "130353144879c702": "{ttl}. The next message reads the whole conversation again.",
+  "cc851b20f4fab12a": "{ttl}. A message sent before then reuses the cached conversation."
 }

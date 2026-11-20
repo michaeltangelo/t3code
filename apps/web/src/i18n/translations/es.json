@@ -12191,5 +12191,14 @@
   "27d76249d09eb69f": "Guía de revisión lista",
   "faa3bb26abb39c93": "Falló la guía de revisión",
   "b7df38b7d8792d78": "Abrir guía",
-  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión"
+  "9e91e9a77b664e4e": "No se pudo iniciar una guía de revisión",
+  "7f4589dde6dd4e54": "Caché de 1 hora",
+  "77ee2660632ddcc9": "Caché de 5 minutos",
+  "dd37d85aa8695f86": "Caché del prompt fría",
+  "16e2bbb87cae6d75": "Caché del prompt activa hasta las {time}",
+  "173ee522a3c92637": "Fría",
+  "6cb61d30ad61ef70": "La caché del prompt de Claude se enfrió a las {time}",
+  "2303f31fa9cb3501": "La caché del prompt de Claude sigue activa hasta las {time}",
+  "130353144879c702": "{ttl}. El próximo mensaje vuelve a leer toda la conversación.",
+  "cc851b20f4fab12a": "{ttl}. Un mensaje enviado antes reutiliza la conversación en caché."
 }

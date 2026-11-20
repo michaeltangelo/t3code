@@ -364,3 +364,28 @@ export function compactBeforeSendTokens(input: {
     ? contextWindow.usedTokens
     : null;
 }
+
+export type PromptCacheTone = "warm" | "near" | "ending" | "cold";
+
+/**
+ * When the prompt cache behind the thread's latest request goes cold, or null when the provider
+ * does not report it. Only Claude does; OpenAI and Gemini evict on load, so a countdown would guess.
+ */
+export function promptCacheExpiry(
+  usage: Pick<
+    OrchestrationV2ProviderTurnTokenUsage,
+    "promptCacheTtlMs" | "promptCacheExpiresAt"
+  > | null,
+): { readonly expiresAtMs: number; readonly ttlMs: number } | null {
+  const expiresAtMs = Date.parse(usage?.promptCacheExpiresAt ?? "");
+  const ttlMs = usage?.promptCacheTtlMs;
+  return ttlMs !== undefined && Number.isFinite(expiresAtMs) ? { expiresAtMs, ttlMs } : null;
+}
+
+/** Near from 10 minutes out (half of a short cache), ending for the last 2 (a fifth of one). */
+export function promptCacheTone(leftMs: number, ttlMs: number): PromptCacheTone {
+  if (leftMs <= 0) return "cold";
+  if (leftMs <= Math.min(2 * 60_000, ttlMs / 5)) return "ending";
+  if (leftMs <= Math.min(10 * 60_000, ttlMs / 2)) return "near";
+  return "warm";
+}

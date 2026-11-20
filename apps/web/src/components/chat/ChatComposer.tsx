@@ -219,6 +219,7 @@ import {
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
 import { CollapsedComposerStopAction, ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { PromptCacheClock } from "./PromptCacheClock";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
@@ -392,6 +393,9 @@ export interface ChatComposerProps {
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
   resumeCompactionTokens: number | null;
+  /** When Claude's prompt cache for an idle thread goes cold, on the environment's clock. */
+  promptCacheExpiresAtMs: number | null;
+  promptCacheTtlMs: number | null;
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
@@ -3878,6 +3882,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}
                   >
+                    {props.promptCacheExpiresAtMs !== null &&
+                    props.promptCacheTtlMs !== null &&
+                    !dictationTakesFooter ? (
+                      <PromptCacheClock
+                        environmentId={environmentId}
+                        expiresAtMs={props.promptCacheExpiresAtMs}
+                        ttlMs={props.promptCacheTtlMs}
+                      />
+                    ) : null}
                     {speechInput.available ? (
                       <>
                         <ComposerSpeechRecordingPill

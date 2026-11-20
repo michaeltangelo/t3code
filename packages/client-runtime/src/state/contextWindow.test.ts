@@ -14,7 +14,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { compactBeforeSendTokens } from "./contextWindow.ts";
+import { compactBeforeSendTokens, promptCacheExpiry, promptCacheTone } from "./contextWindow.ts";
 import type { ThreadStructure } from "./models.ts";
 import { v2Projection } from "./orchestrationV2TestFixtures.ts";
 
@@ -260,5 +260,31 @@ describe("compactBeforeSendTokens", () => {
     expect(compactBeforeSendTokens(sendInput(overrides as Parameters<typeof sendInput>[0]))).toBe(
       expected ? 293_611 : null,
     );
+  });
+});
+
+describe("promptCacheExpiry", () => {
+  it("needs both the TTL and the expiry Claude reported", () => {
+    const expiresAt = "2026-01-01T01:00:00.000Z";
+    expect(
+      promptCacheExpiry({ promptCacheTtlMs: 3_600_000, promptCacheExpiresAt: expiresAt }),
+    ).toEqual({ expiresAtMs: Date.parse(expiresAt), ttlMs: 3_600_000 });
+    expect(promptCacheExpiry({ promptCacheExpiresAt: expiresAt })).toBeNull();
+    expect(promptCacheExpiry({ promptCacheTtlMs: 3_600_000 })).toBeNull();
+    expect(promptCacheExpiry(null)).toBeNull();
+  });
+});
+
+describe("promptCacheTone", () => {
+  it.each([
+    [3_600_000, 11 * 60_000, "warm"],
+    [3_600_000, 10 * 60_000, "near"],
+    [3_600_000, 2 * 60_000, "ending"],
+    [300_000, 151_000, "warm"],
+    [300_000, 150_000, "near"],
+    [300_000, 60_000, "ending"],
+    [300_000, 0, "cold"],
+  ] as const)("a %d ms cache with %d ms left is %s", (ttlMs, leftMs, tone) => {
+    expect(promptCacheTone(leftMs, ttlMs)).toBe(tone);
   });
 });

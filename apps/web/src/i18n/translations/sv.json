@@ -12203,5 +12203,14 @@
   "27d76249d09eb69f": "Granskningsguiden är klar",
   "faa3bb26abb39c93": "Granskningsguiden misslyckades",
   "b7df38b7d8792d78": "Öppna guiden",
-  "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide"
+  "9e91e9a77b664e4e": "Kunde inte starta en granskningsguide",
+  "7f4589dde6dd4e54": "Cache på 1 timme",
+  "77ee2660632ddcc9": "Cache på 5 minuter",
+  "dd37d85aa8695f86": "Promptcachen är kall",
+  "16e2bbb87cae6d75": "Promptcachen är varm till {time}",
+  "173ee522a3c92637": "Kall",
+  "6cb61d30ad61ef70": "Claudes promptcache blev kall {time}",
+  "2303f31fa9cb3501": "Claudes promptcache är varm till {time}",
+  "130353144879c702": "{ttl}. Nästa meddelande läser hela konversationen igen.",
+  "cc851b20f4fab12a": "{ttl}. Ett meddelande som skickas innan dess återanvänder den cachade konversationen."
 }

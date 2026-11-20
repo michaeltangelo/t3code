@@ -12195,5 +12195,14 @@
   "27d76249d09eb69f": "Guia de revisão pronto",
   "faa3bb26abb39c93": "O guia de revisão falhou",
   "b7df38b7d8792d78": "Abrir guia",
-  "9e91e9a77b664e4e": "Não foi possível iniciar um guia de revisão"
+  "9e91e9a77b664e4e": "Não foi possível iniciar um guia de revisão",
+  "7f4589dde6dd4e54": "Cache de 1 hora",
+  "77ee2660632ddcc9": "Cache de 5 minutos",
+  "dd37d85aa8695f86": "Cache do prompt frio",
+  "16e2bbb87cae6d75": "Cache do prompt ativo até {time}",
+  "173ee522a3c92637": "Frio",
+  "6cb61d30ad61ef70": "O cache do prompt do Claude esfriou às {time}",
+  "2303f31fa9cb3501": "O cache do prompt do Claude fica ativo até {time}",
+  "130353144879c702": "{ttl}. A próxima mensagem lê a conversa inteira de novo.",
+  "cc851b20f4fab12a": "{ttl}. Uma mensagem enviada antes disso reutiliza a conversa em cache."
 }

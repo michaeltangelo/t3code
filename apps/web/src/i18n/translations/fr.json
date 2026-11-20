@@ -12196,5 +12196,14 @@
   "27d76249d09eb69f": "Guide de revue prêt",
   "faa3bb26abb39c93": "Échec du guide de revue",
   "b7df38b7d8792d78": "Ouvrir le guide",
-  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue"
+  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue",
+  "7f4589dde6dd4e54": "Cache d'1 heure",
+  "77ee2660632ddcc9": "Cache de 5 minutes",
+  "dd37d85aa8695f86": "Cache du prompt froid",
+  "16e2bbb87cae6d75": "Cache du prompt chaud jusqu'à {time}",
+  "173ee522a3c92637": "Froid",
+  "6cb61d30ad61ef70": "Le cache du prompt de Claude a refroidi à {time}",
+  "2303f31fa9cb3501": "Le cache du prompt de Claude reste chaud jusqu'à {time}",
+  "130353144879c702": "{ttl}. Le prochain message relit toute la conversation.",
+  "cc851b20f4fab12a": "{ttl}. Un message envoyé avant réutilise la conversation en cache."
 }

@@ -352,6 +352,7 @@ import {
   deriveLatestContextWindowSnapshot,
   hasDismissedResumeCompaction,
   latestProviderTurnTokenUsage,
+  promptCacheExpiry,
   shouldOfferResumeCompaction,
 } from "@t3tools/client-runtime/state/context-window";
 import {
@@ -2582,6 +2583,15 @@ export default function ChatView(props: ChatViewProps) {
     })
       ? activeContextWindow.usedTokens
       : null;
+  // The next send reuses this cache only from the same conversation on the same provider.
+  const promptCache =
+    !isWorking &&
+    pendingHandoff === null &&
+    !freshSessionPending &&
+    multipleModelSelections === null &&
+    activeProviderInstanceId === serverProjection?.thread.modelSelection.instanceId
+      ? promptCacheExpiry(activeThreadLiveTokenUsage)
+      : null;
   const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -3761,6 +3771,8 @@ export default function ChatView(props: ChatViewProps) {
                                     : composerBannerItems
                                 }
                                 resumeCompactionTokens={resumeCompactionTokens}
+                                promptCacheExpiresAtMs={promptCache?.expiresAtMs ?? null}
+                                promptCacheTtlMs={promptCache?.ttlMs ?? null}
                                 keepFullHistory={keepFullHistory}
                                 onToggleKeepFullHistory={toggleKeepFullHistoryStable}
                                 sideChatAvailable={sideChat.available}
